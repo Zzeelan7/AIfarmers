@@ -1,0 +1,123 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Farmer Dashboard</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="nav-left">
+      <h2>FarmerAI</h2>
+    </div>
+    <div class="nav-right">
+      <span id="farmerName">Loading...</span>
+      <button id="editProfileBtn">Edit Profile</button>
+      <button id="logoutBtn">Logout</button>
+    </div>
+  </nav>
+
+  <!-- Profile Section -->
+  <section class="profile">
+    <h3>Your Profile</h3>
+    <p><strong>Name:</strong> <span id="name"></span></p>
+    <p><strong>Email:</strong> <span id="email"></span></p>
+    <p><strong>Farm Type:</strong> <span id="farmType"></span></p>
+    <p><strong>Location:</strong> <span id="location"></span></p>
+  </section>
+
+  <!-- Functionality Buttons -->
+  <section class="features">
+    <h3>Explore Features</h3>
+    <div class="feature-buttons">
+      <button onclick="goTo('weather.html')">🌦 Weather Forecast</button>
+      <button onclick="goTo('market.html')">📊 Market Prices</button>
+      <button onclick="goTo('disease.html')">🌱 Crop Disease Detection</button>
+      <button onclick="goTo('risk.html')">🚨 Risk Alerts</button>
+      <button onclick="goTo('recommend.html')">🤖 Recommendations</button>
+      <button onclick="goTo('finance.html')">💰 Financial Support</button>
+      <button onclick="goTo('forum.html')">👥 Community Forum</button>
+    </div>
+  </section>
+
+  <!-- Edit Profile Modal -->
+  <div id="editModal" class="modal">
+    <div class="modal-content">
+      <h3>Edit Profile</h3>
+      <form id="editForm">
+        <input type="text" name="name" placeholder="Full Name" required>
+        <input type="text" name="farmType" placeholder="Farm Type (e.g. Vegetables)" required>
+        <input type="text" name="location" placeholder="Location" required>
+        <button type="submit">Save Changes</button>
+        <button type="button" onclick="closeModal()">Cancel</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const token = localStorage.getItem('token');
+    if (!token) window.location.href = '/login.html';
+
+    // Fetch profile on load
+    fetch('/api/me', { headers: { Authorization: 'Bearer ' + token }})
+      .then(r => r.json())
+      .then(data => {
+        if (!data.user) { localStorage.removeItem('token'); window.location.href='/login.html'; return; }
+        document.getElementById('farmerName').textContent = data.user.name;
+        document.getElementById('name').textContent = data.user.name;
+        document.getElementById('email').textContent = data.user.email;
+        document.getElementById('farmType').textContent = data.user.farmType || 'Not set';
+        document.getElementById('location').textContent = data.user.location || 'Not set';
+
+        // Pre-fill edit form
+        const form = document.getElementById('editForm');
+        form.name.value = data.user.name;
+        form.farmType.value = data.user.farmType || '';
+        form.location.value = data.user.location || '';
+      });
+
+    // Logout
+    document.getElementById('logoutBtn').addEventListener('click', () => {
+      localStorage.removeItem('token');
+      window.location.href = '/login.html';
+    });
+
+    // Navigation
+    function goTo(page) {
+      window.location.href = '/' + page;
+    }
+
+    // Edit profile
+    document.getElementById('editProfileBtn').addEventListener('click', () => {
+      document.getElementById('editModal').style.display = 'block';
+    });
+
+    function closeModal() {
+      document.getElementById('editModal').style.display = 'none';
+    }
+
+    document.getElementById('editForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const payload = {
+        name: form.name.value,
+        farmType: form.farmType.value,
+        location: form.location.value
+      };
+      const res = await fetch('/api/updateProfile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert('Profile updated successfully');
+        window.location.reload();
+      } else {
+        alert(data.error || 'Update failed');
+      }
+    });
+  </script>
+</body>
+</html>
