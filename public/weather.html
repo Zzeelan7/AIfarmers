@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Weather Forecast</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .weather-container {
+      max-width: 700px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+    .weather-result {
+      margin-top: 20px;
+      padding: 20px;
+      border-radius: 10px;
+      background: #f7f7f7;
+      text-align: left;
+    }
+    .advice-box {
+      margin-top: 20px;
+      padding: 15px;
+      background: #e8f5e9;
+      border-radius: 10px;
+      color: #2e7d32;
+      font-weight: bold;
+      text-align: left;
+    }
+    .input-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 15px;
+      justify-content: center;
+    }
+    select, button {
+      padding: 10px 16px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      font-size: 15px;
+    }
+    button {
+      background: #4CAF50;
+      color: white;
+      cursor: pointer;
+      border: none;
+    }
+    button:hover {
+      background: #45a049;
+    }
+    ul {
+      text-align: left;
+      padding-left: 20px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="nav-left"><h2>FarmerAI</h2></div>
+    <div class="nav-right">
+      <button onclick="goBack()">⬅ Dashboard</button>
+    </div>
+  </nav>
+
+  <!-- Weather Section -->
+  <div class="weather-container">
+    <h2>🌦 Weather Forecast</h2>
+    <div class="input-row">
+      <select id="citySelect" onchange="fetchCityWeather()">
+        <option value="">-- Select City --</option>
+        <option value="12.9716,77.5946">Bangalore</option>
+        <option value="28.7041,77.1025">Delhi</option>
+        <option value="19.0760,72.8777">Mumbai</option>
+        <option value="13.0827,80.2707">Chennai</option>
+        <option value="22.5726,88.3639">Kolkata</option>
+        <option value="26.9124,75.7873">Jaipur</option>
+        <option value="17.3850,78.4867">Hyderabad</option>
+        <option value="18.5204,73.8567">Pune</option>
+        <option value="21.1702,72.8311">Surat</option>
+        <option value="26.8467,80.9462">Lucknow</option>
+        <option value="23.2599,77.4126">Bhopal</option>
+        <option value="25.5941,85.1376">Patna</option>
+        <option value="30.7333,76.7794">Chandigarh</option>
+        <option value="23.3441,85.3096">Ranchi</option>
+      </select>
+      <button onclick="useLocation()">📍 Use GPS</button>
+      <button onclick="fetchSavedLocation()">🌱 Use My Farm Location</button>
+    </div>
+    <div id="weatherOutput" class="weather-result">Choose a city, use GPS, or load your saved farm location.</div>
+    <div id="adviceBox" class="advice-box" style="display:none;"></div>
+  </div>
+
+  <script>
+    const token = localStorage.getItem("token");
+    if (!token) window.location.href = "/login.html";
+
+    function goBack() {
+      window.location.href = "/dashboard.html";
+    }
+
+    // Fetch from backend (so API key isn't exposed)
+    async function fetchWeather(lat, lon) {
+      const url = `/api/weather?lat=${lat}&lon=${lon}`;
+      const res = await fetch(url, {
+        headers: { Authorization: "Bearer " + token }
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        document.getElementById("weatherOutput").textContent = "❌ " + (data.error || "Error fetching weather");
+        return;
+      }
+
+      const current = data.weather.current_weather;
+      const hourly = data.weather.hourly;
+
+      let html = `
+        <h3>📍 Location: ${lat}, ${lon}</h3>
+        <p><strong>Temperature:</strong> ${current.temperature} °C</p>
+        <p><strong>Wind Speed:</strong> ${current.windspeed} m/s</p>
+        <p><strong>Weather Code:</strong> ${current.weathercode}</p>
+      `;
+
+      document.getElementById("weatherOutput").innerHTML = html;
+
+      showAdvice(current);
+      showForecastDetails(hourly);
+    }
+
+    // Advice for farmers
+    function showAdvice(current) {
+      const temp = current.temperature;
+      const code = current.weathercode;
+      let advice = "";
+
+      if (code >= 60 && code < 70) advice = "🌧 Rain expected: Protect crops from waterlogging. Delay irrigation.";
+      else if (code === 0) advice = "☀ Clear sky: Good time for pesticide/fertilizer spray. Ensure irrigation.";
+      else if (code >= 1 && code <= 3) advice = "☁ Cloudy: Monitor humidity, suitable for sowing short-duration crops.";
+      else if (code >= 95) advice = "⛈ Thunderstorm risk: Avoid fieldwork, secure tools and livestock.";
+      else if (temp > 35) advice = "🔥 High temperature: Ensure irrigation, consider shade nets.";
+      else if (temp < 10) advice = "🥶 Low temperature: Protect crops with mulching or cover.";
+      else advice = "🌱 Conditions are normal for most crops.";
+
+      const box = document.getElementById("adviceBox");
+      box.textContent = advice;
+      box.style.display = "block";
+    }
+
+    // Show next 12h forecast
+    function showForecastDetails(hourly) {
+      let html = "<h4>Next 12 Hours Forecast</h4><ul>";
+      for (let i = 0; i < 12; i++) {
+        const time = new Date(hourly.time[i]);
+        html += `<li>
+          ${time.getHours()}:00 → 🌡 ${hourly.temperature_2m[i]}°C | 💧 ${hourly.relative_humidity_2m[i]}% | 🌧 ${hourly.precipitation[i]}mm
+        </li>`;
+      }
+      html += "</ul>";
+      document.getElementById("weatherOutput").innerHTML += html;
+    }
+
+    // From dropdown
+    function fetchCityWeather() {
+      const value = document.getElementById("citySelect").value;
+      if (!value) return;
+      const [lat, lon] = value.split(",");
+      fetchWeather(lat, lon);
+    }
+
+    // From GPS
+    function useLocation() {
+      if (!navigator.geolocation) return alert("Geolocation not supported");
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          fetchWeather(pos.coords.latitude, pos.coords.longitude);
+        },
+        () => alert("Could not fetch your location")
+      );
+    }
+
+    // From saved farm profile (backend auto-picks coords)
+    async function fetchSavedLocation() {
+      const url = "/api/weather";
+      const res = await fetch(url, {
+        headers: { Authorization: "Bearer " + token }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const current = data.weather.current_weather;
+        const hourly = data.weather.hourly;
+        document.getElementById("weatherOutput").innerHTML = `
+          <h3>📍 Farm Location (from profile)</h3>
+          <p><strong>Temperature:</strong> ${current.temperature} °C</p>
+          <p><strong>Wind Speed:</strong> ${current.windspeed} m/s</p>
+          <p><strong>Weather Code:</strong> ${current.weathercode}</p>
+        `;
+        showAdvice(current);
+        showForecastDetails(hourly);
+      } else {
+        document.getElementById("weatherOutput").textContent = "❌ " + (data.error || "No saved location found");
+      }
+    }
+  </script>
+</body>
+</html>
