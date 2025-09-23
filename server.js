@@ -13,6 +13,10 @@ const PORT = process.env.PORT || 3000;
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const client = new OAuth2Client(GOOGLE_CLIENT_ID);
 
+// Serve static files (CSS, JS, HTML)
+app.use(express.static(path.join(__dirname, "public")));
+
+
 // Middlewares
 app.use(cors());
 app.use(express.json());
@@ -24,17 +28,23 @@ mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
-.then(()=> console.log('MongoDB connected'))
-.catch((err)=> console.error('MongoDB connection error:', err));
+  .then(() => console.log('MongoDB connected'))
+  .catch((err) => console.error('MongoDB connection error:', err));
 
 // Mongoose User model
 const userSchema = new mongoose.Schema({
   name: String,
   email: { type: String, unique: true, required: true },
-  passwordHash: String,   // null if user signed up with Google
+  passwordHash: String,
   googleId: String,
+  farmType: String,
+  location: String, // e.g. "Bangalore"
+  locationLat: Number,
+  locationLon: Number,
   createdAt: { type: Date, default: Date.now }
 });
+
+
 const User = mongoose.model('User', userSchema);
 
 // Helpers
@@ -123,6 +133,119 @@ app.get('/api/me', async (req, res) => {
     res.status(401).json({ error: 'Invalid token' });
   }
 });
+
+app.put('/api/updateProfile', async (req, res) => {
+  try {
+    const auth = req.headers.authorization;
+    if (!auth) return res.status(401).json({ error: 'No token' });
+    const token = auth.split(' ')[1];
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    const { name, farmType, location } = req.body;
+    const user = await User.findByIdAndUpdate(
+      decoded.id,
+      { name, farmType, location },
+      { new: true }
+    ).select('-passwordHash');
+
+    res.json({ user });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Update failed' });
+  }
+});
+
+const axios = require("axios"); // install if not already: npm install axios
+
+// Weather API (Open-Meteo)
+app.get("/api/weather", async (req, res) => {
+  try {
+    const auth = req.headers.authorization;
+    if (!auth) return res.status(401).json({ error: "No token" });
+    const token = auth.split(" ")[1];
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    const user = await User.findById(decoded.id);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    let { lat, lon } = req.query; // optional query params
+
+    // fallback to user profile location if available
+    if (!lat || !lon) {
+      if (!user.locationLat || !user.locationLon) {
+        return res.status(400).json({ error: "No coordinates available" });
+      }
+      lat = user.locationLat;
+      lon = user.locationLon;
+    }
+
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=temperature_2m,relative_humidity_2m,precipitation`;
+
+
+    const response = await axios.get(url);
+    res.json({ weather: response.data });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Weather fetch failed" });
+  }
+});
+
+// Route to get mandi price from CSV
+
+// const fs = require("fs");
+// const csv = require("csv-parser");
+
+
+
+// app.get("/api/market", (req, res) => {
+//   const { state, mandi, crop } = req.query;
+
+//   if (!state || !mandi || !crop) {
+//     return res.status(400).json({ error: "State, Mandi, and Crop are required" });
+//   }
+
+//   const filePath = path.join(__dirname, "data", "market.csv");
+//   const results = [];
+
+//   fs.createReadStream(filePath)
+//     .pipe(csv())
+//     .on("data", (row) => {
+//       if (
+//         row.state_name?.toLowerCase() === state.toLowerCase() &&
+//         row.district_name?.toLowerCase() === mandi.toLowerCase() &&
+//         row.commodity?.toLowerCase() === crop.toLowerCase()
+//       ) {
+//         results.push(row);
+//       }
+//     })
+//     .on("end", () => {
+//       if (results.length === 0) {
+//         return res.status(404).json({ error: "No records found" });
+//       }
+
+//       results.sort((a, b) => new Date(b.arrival_date) - new Date(a.arrival_date));
+//       const latest = results[0];
+
+//       res.json({
+//         state: latest.state_name,
+//         mandi: latest.district_name,
+//         crop: latest.commodity,
+//         variety: latest.variety,
+//         grade: latest.grade,
+//         min_price: latest.min_price,
+//         max_price: latest.max_price,
+//         modal_price: latest.modal_price,
+//         arrival_date: latest.arrival_date
+//       });
+//     })
+//     .on("error", (err) => {
+//       console.error("CSV Read Error:", err.message);
+//       res.status(500).json({ error: "Failed to read dataset" });
+//     });
+// });
+
+
+
 
 // Start
 app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
