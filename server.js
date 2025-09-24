@@ -192,59 +192,87 @@ app.get("/api/weather", async (req, res) => {
 
 // Route to get mandi price from CSV
 
-// const fs = require("fs");
-// const csv = require("csv-parser");
+const fs = require("fs");
+const csv = require("csv-parser");
+
+const filePath = path.join(__dirname, "data", "market.csv");
+
+// Helper: Load CSV once into memory
+let marketData = [];
+fs.createReadStream(filePath)
+  .pipe(csv())
+  .on("data", (row) => {
+    marketData.push(row);
+  })
+  .on("end", () => {
+    console.log("✅ Market data loaded:", marketData.length, "records");
+  });
+
+// 1. Get options dynamically
+app.get("/api/options", (req, res) => {
+  const { state, district, market, commodity, variety, grade } = req.query;
+
+  let filtered = [...marketData];
+
+  if (state) filtered = filtered.filter(r => r.State === state);
+  if (district) filtered = filtered.filter(r => r.District === district);
+  if (market) filtered = filtered.filter(r => r.Market === market);
+  if (commodity) filtered = filtered.filter(r => r.Commodity === commodity);
+  if (variety) filtered = filtered.filter(r => r.Variety === variety);
+  if (grade) filtered = filtered.filter(r => r.Grade === grade);
+
+  // only return the "next" options, not all
+  const options = {};
+  if (!state) options.states = [...new Set(marketData.map(r => r.State))];
+  else if (!district) options.districts = [...new Set(filtered.map(r => r.District))];
+  else if (!market) options.markets = [...new Set(filtered.map(r => r.Market))];
+  else if (!commodity) options.commodities = [...new Set(filtered.map(r => r.Commodity))];
+  else if (!variety) options.varieties = [...new Set(filtered.map(r => r.Variety))];
+  else if (!grade) options.grades = [...new Set(filtered.map(r => r.Grade))];
+
+  res.json(options);
+});
 
 
+// 2. Get latest price record
+app.get("/api/market", (req, res) => {
+  const { state, district, market, commodity, variety, grade } = req.query;
 
-// app.get("/api/market", (req, res) => {
-//   const { state, mandi, crop } = req.query;
+  if (!state || !district || !market || !commodity || !variety || !grade) {
+    return res.status(400).json({ error: "All filters required" });
+  }
 
-//   if (!state || !mandi || !crop) {
-//     return res.status(400).json({ error: "State, Mandi, and Crop are required" });
-//   }
+  let filtered = marketData.filter(
+    (r) =>
+      r.State === state &&
+      r.District === district &&
+      r.Market === market &&
+      r.Commodity === commodity &&
+      r.Variety === variety &&
+      r.Grade === grade
+  );
 
-//   const filePath = path.join(__dirname, "data", "market.csv");
-//   const results = [];
+  if (filtered.length === 0) {
+    return res.status(404).json({ error: "No data found" });
+  }
 
-//   fs.createReadStream(filePath)
-//     .pipe(csv())
-//     .on("data", (row) => {
-//       if (
-//         row.state_name?.toLowerCase() === state.toLowerCase() &&
-//         row.district_name?.toLowerCase() === mandi.toLowerCase() &&
-//         row.commodity?.toLowerCase() === crop.toLowerCase()
-//       ) {
-//         results.push(row);
-//       }
-//     })
-//     .on("end", () => {
-//       if (results.length === 0) {
-//         return res.status(404).json({ error: "No records found" });
-//       }
+  // Pick latest by Arrival_Date
+  filtered.sort((a, b) => new Date(b.Arrival_Date) - new Date(a.Arrival_Date));
+  const latest = filtered[0];
 
-//       results.sort((a, b) => new Date(b.arrival_date) - new Date(a.arrival_date));
-//       const latest = results[0];
-
-//       res.json({
-//         state: latest.state_name,
-//         mandi: latest.district_name,
-//         crop: latest.commodity,
-//         variety: latest.variety,
-//         grade: latest.grade,
-//         min_price: latest.min_price,
-//         max_price: latest.max_price,
-//         modal_price: latest.modal_price,
-//         arrival_date: latest.arrival_date
-//       });
-//     })
-//     .on("error", (err) => {
-//       console.error("CSV Read Error:", err.message);
-//       res.status(500).json({ error: "Failed to read dataset" });
-//     });
-// });
-
-
+  res.json({
+    state: latest.State,
+    district: latest.District,
+    market: latest.Market,
+    commodity: latest.Commodity,
+    variety: latest.Variety,
+    grade: latest.Grade,
+    arrival_date: latest.Arrival_Date,
+    min_price: latest.Min_x0020_Price,
+    max_price: latest.Max_x0020_Price,
+    modal_price: latest.Modal_x0020_Price
+  });
+});
 
 
 // Start
