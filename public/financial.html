@@ -1,0 +1,89 @@
+<!doctype html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Financial Support - FarmerAI</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <nav class="navbar">
+        <div class="nav-left">
+            <h2>FarmerAI</h2>
+        </div>
+        <div class="nav-right"><button onclick="goBack()">⬅ Dashboard</button></div>
+    </nav>
+
+    <div class="auth-container" style="max-width:700px;margin:30px auto;">
+        <h2>Apply for Loan / Insurance</h2>
+        <form id="applyForm">
+            <label>Type</label>
+            <select name="type" required>
+                <option value="loan">Loan</option>
+                <option value="insurance">Insurance</option>
+            </select><br />
+            <label>Amount (INR)</label>
+            <input name="amount" type="number" required /><br />
+            <label>Purpose</label>
+            <select name="purpose">
+                <option>Seeds</option>
+                <option>Fertilizer</option>
+                <option>Irrigation</option>
+                <option>Equipment</option>
+                <option>Other</option>
+            </select><br />
+            <button type="submit">Submit Application</button>
+        </form>
+
+        <h3 style="margin-top:24px;">My Requests</h3>
+        <div id="requestsList">Loading...</div>
+    </div>
+
+    <script>
+
+
+        function goBack() { window.location.href = '/dashboard.html' }
+
+        // submit form
+        document.getElementById('applyForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const f = e.target;
+            const payload = {
+                type: f.type.value,
+                amount: Number(f.amount.value),
+                purpose: f.purpose.value,
+                username: "DemoUser"   // 👈 for now
+            };
+            const res = await fetch('/api/financial/apply', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (res.ok) { alert('Submitted'); loadMyRequests(); f.reset(); }
+            else alert(data.error || 'Submit failed');
+        });
+
+
+        // list user's requests
+        async function loadMyRequests() {
+            const res = await fetch('/api/financial/my');
+            const data = await res.json();
+            if (!res.ok) { document.getElementById('requestsList').innerText = data.error || 'Failed'; return; }
+            const list = data.requests;
+            if (list.length === 0) { document.getElementById('requestsList').innerHTML = '<p>No requests yet.</p>'; return; }
+            let html = '<table style="width:100%;border-collapse:collapse"><tr><th>User</th><th>Type</th><th>Amount</th><th>Purpose</th><th>Status</th><th>Date</th></tr>';
+            list.forEach(r => {
+                html += `<tr><td>${r.username}</td><td>${r.type}</td><td>₹${r.amount}</td><td>${r.purpose}</td><td>${r.status}</td><td>${new Date(r.createdAt).toLocaleString()}</td></tr>`;
+            });
+            html += '</table>';
+            document.getElementById('requestsList').innerHTML = html;
+        }
+
+
+        loadMyRequests();
+    </script>
+</body>
+
+</html>
