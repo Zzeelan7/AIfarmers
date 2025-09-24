@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Market Prices</title>
+  <style>
+    .container {
+      max-width: 800px;
+      margin: 20px auto;
+      text-align: center;
+    }
+
+    select,
+    button {
+      padding: 10px;
+      margin: 5px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+
+    th,
+    td {
+      padding: 10px;
+      border: 1px solid #ddd;
+    }
+
+    th {
+      background: #f2f2f2;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h2>📊 Market Price Finder</h2>
+
+    <div>
+      <select id="stateSelect" onchange="loadOptions('district')">
+        <option value="">-- Select State --</option>
+      </select>
+      <select id="districtSelect" onchange="loadOptions('market')">
+        <option value="">-- Select District --</option>
+      </select>
+      <select id="marketSelect" onchange="loadOptions('commodity')">
+        <option value="">-- Select Market --</option>
+      </select>
+      <select id="commoditySelect" onchange="loadOptions('variety')">
+        <option value="">-- Select Commodity --</option>
+      </select>
+      <select id="varietySelect" onchange="loadOptions('grade')">
+        <option value="">-- Select Variety --</option>
+      </select>
+      <select id="gradeSelect">
+        <option value="">-- Select Grade --</option>
+      </select>
+    </div>
+
+    <button onclick="fetchPrices()">🔍 Get Prices</button>
+
+    <div id="output"></div>
+  </div>
+
+  <script>
+    async function loadOptions(level) {
+      const state = document.getElementById("stateSelect").value;
+      const district = document.getElementById("districtSelect").value;
+      const market = document.getElementById("marketSelect").value;
+      const commodity = document.getElementById("commoditySelect").value;
+      const variety = document.getElementById("varietySelect").value;
+      const grade = document.getElementById("gradeSelect").value;
+
+      const res = await fetch(`/api/options?state=${state}&district=${district}&market=${market}&commodity=${commodity}&variety=${variety}&grade=${grade}`);
+      const data = await res.json();
+
+      if (data.states) fillSelect("stateSelect", data.states);
+      if (data.districts) fillSelect("districtSelect", data.districts);
+      if (data.markets) fillSelect("marketSelect", data.markets);
+      if (data.commodities) fillSelect("commoditySelect", data.commodities);
+      if (data.varieties) fillSelect("varietySelect", data.varieties);
+      if (data.grades) fillSelect("gradeSelect", data.grades);
+    }
+
+
+    function fillSelect(id, options) {
+      const select = document.getElementById(id);
+      select.innerHTML = `<option value="">-- Select --</option>`;
+      options.forEach(o => {
+        const opt = document.createElement("option");
+        opt.value = o;
+        opt.textContent = o;
+        select.appendChild(opt);
+      });
+    }
+
+    async function fetchPrices() {
+      const state = document.getElementById("stateSelect").value;
+      const district = document.getElementById("districtSelect").value;
+      const market = document.getElementById("marketSelect").value;
+      const commodity = document.getElementById("commoditySelect").value;
+      const variety = document.getElementById("varietySelect").value;
+      const grade = document.getElementById("gradeSelect").value;
+
+      const res = await fetch(`/api/market?state=${state}&district=${district}&market=${market}&commodity=${commodity}&variety=${variety}&grade=${grade}`);
+      const data = await res.json();
+
+      if (res.ok) {
+        document.getElementById("output").innerHTML = `
+          <table>
+            <tr><th>State</th><th>District</th><th>Market</th><th>Commodity</th><th>Variety</th><th>Grade</th><th>Date</th><th>Min Price</th><th>Max Price</th><th>Modal Price</th></tr>
+            <tr>
+              <td>${data.state}</td>
+              <td>${data.district}</td>
+              <td>${data.market}</td>
+              <td>${data.commodity}</td>
+              <td>${data.variety}</td>
+              <td>${data.grade}</td>
+              <td>${data.arrival_date}</td>
+              <td>₹${data.min_price}</td>
+              <td>₹${data.max_price}</td>
+              <td>₹${data.modal_price}</td>
+            </tr>
+          </table>
+        `;
+      } else {
+        document.getElementById("output").innerHTML = `<p style="color:red;">${data.error}</p>`;
+      }
+    }
+
+    // Load states on first load
+    window.onload = () => loadOptions("district");
+  </script>
+</body>
+
+</html>
