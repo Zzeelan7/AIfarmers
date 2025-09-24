@@ -164,12 +164,12 @@ app.get("/api/weather", async (req, res) => {
     if (!auth) return res.status(401).json({ error: "No token" });
     const token = auth.split(" ")[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
+    
     const user = await User.findById(decoded.id);
     if (!user) return res.status(404).json({ error: "User not found" });
-
+    
     let { lat, lon } = req.query; // optional query params
-
+    
     // fallback to user profile location if available
     if (!lat || !lon) {
       if (!user.locationLat || !user.locationLon) {
@@ -178,10 +178,10 @@ app.get("/api/weather", async (req, res) => {
       lat = user.locationLat;
       lon = user.locationLon;
     }
-
+    
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=temperature_2m,relative_humidity_2m,precipitation`;
-
-
+    
+    
     const response = await axios.get(url);
     res.json({ weather: response.data });
   } catch (err) {
@@ -200,27 +200,27 @@ const filePath = path.join(__dirname, "data", "market.csv");
 // Helper: Load CSV once into memory
 let marketData = [];
 fs.createReadStream(filePath)
-  .pipe(csv())
-  .on("data", (row) => {
-    marketData.push(row);
-  })
-  .on("end", () => {
-    console.log("✅ Market data loaded:", marketData.length, "records");
-  });
+.pipe(csv())
+.on("data", (row) => {
+  marketData.push(row);
+})
+.on("end", () => {
+  console.log("✅ Market data loaded:", marketData.length, "records");
+});
 
 // 1. Get options dynamically
 app.get("/api/options", (req, res) => {
   const { state, district, market, commodity, variety, grade } = req.query;
-
+  
   let filtered = [...marketData];
-
+  
   if (state) filtered = filtered.filter(r => r.State === state);
   if (district) filtered = filtered.filter(r => r.District === district);
   if (market) filtered = filtered.filter(r => r.Market === market);
   if (commodity) filtered = filtered.filter(r => r.Commodity === commodity);
   if (variety) filtered = filtered.filter(r => r.Variety === variety);
   if (grade) filtered = filtered.filter(r => r.Grade === grade);
-
+  
   // only return the "next" options, not all
   const options = {};
   if (!state) options.states = [...new Set(marketData.map(r => r.State))];
@@ -229,7 +229,7 @@ app.get("/api/options", (req, res) => {
   else if (!commodity) options.commodities = [...new Set(filtered.map(r => r.Commodity))];
   else if (!variety) options.varieties = [...new Set(filtered.map(r => r.Variety))];
   else if (!grade) options.grades = [...new Set(filtered.map(r => r.Grade))];
-
+  
   res.json(options);
 });
 
@@ -237,21 +237,21 @@ app.get("/api/options", (req, res) => {
 // 2. Get latest price record
 app.get("/api/market", (req, res) => {
   const { state, district, market, commodity, variety, grade } = req.query;
-
+  
   if (!state || !district || !market || !commodity || !variety || !grade) {
     return res.status(400).json({ error: "All filters required" });
   }
-
+  
   let filtered = marketData.filter(
     (r) =>
       r.State === state &&
-      r.District === district &&
-      r.Market === market &&
-      r.Commodity === commodity &&
-      r.Variety === variety &&
-      r.Grade === grade
+    r.District === district &&
+    r.Market === market &&
+    r.Commodity === commodity &&
+    r.Variety === variety &&
+    r.Grade === grade
   );
-
+  
   if (filtered.length === 0) {
     return res.status(404).json({ error: "No data found" });
   }
@@ -259,7 +259,7 @@ app.get("/api/market", (req, res) => {
   // Pick latest by Arrival_Date
   filtered.sort((a, b) => new Date(b.Arrival_Date) - new Date(a.Arrival_Date));
   const latest = filtered[0];
-
+  
   res.json({
     state: latest.State,
     district: latest.District,
@@ -272,6 +272,148 @@ app.get("/api/market", (req, res) => {
     max_price: latest.Max_x0020_Price,
     modal_price: latest.Modal_x0020_Price
   });
+});
+
+const financialRequestSchema = new mongoose.Schema({
+  username: { type: String, default: "Anonymous" },
+  type: { type: String, enum: ["loan", "insurance"], required: true },
+  amount: { type: Number, required: true },
+  purpose: { type: String },
+  status: { type: String, enum: ["pending", "approved", "rejected"], default: "pending" },
+  notes: { type: String },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+});
+
+const FinancialRequest = mongoose.model("FinancialRequest", financialRequestSchema);
+
+// Create new financial request
+app.post("/api/financial/apply", async (req, res) => {
+  try {
+    const { type, amount, purpose, username } = req.body;
+    if (!type || !amount) return res.status(400).json({ error: "type and amount required" });
+
+    const fr = await FinancialRequest.create({
+      type,
+      amount,
+      purpose,
+      username: username || "Anonymous"
+    });
+    res.json({ success: true, request: fr });
+  } catch (err) {
+    console.error("Financial apply error:", err);
+    res.status(500).json({ error: "Failed to submit request" });
+  }
+});
+
+app.get("/api/financial/my", async (req, res) => {
+  try {
+    const list = await FinancialRequest.find().sort({ createdAt: -1 });
+    res.json({ requests: list });
+  } catch (err) {
+    console.error("Financial my error:", err);
+    res.status(500).json({ error: "Failed to fetch requests" });
+  }
+});
+
+
+// (Optional admin) Update status
+app.put("/api/financial/:id/status", async (req, res) => {
+  try {
+    // simple admin check - you can make this robust (e.g., role flag)
+    const adminEmails = (process.env.ADMIN_EMAILS || "").split(",").filter(Boolean);
+    if (!adminEmails.includes(req.user.email)) return res.status(403).json({ error: "Admin only" });
+
+    const { status, notes } = req.body;
+    const allowed = ["pending","approved","rejected"];
+    if (!allowed.includes(status)) return res.status(400).json({ error: "Invalid status" });
+
+    const fr = await FinancialRequest.findByIdAndUpdate(req.params.id, { status, notes, updatedAt: new Date() }, { new: true });
+    res.json({ success: true, request: fr });
+  } catch (err) {
+    console.error("Financial update error:", err);
+    res.status(500).json({ error: "Failed to update" });
+  }
+});
+
+const forumPostSchema = new mongoose.Schema({
+  username: { type: String, default: "Anonymous" },
+  title: { type: String, required: true },
+  content: { type: String, required: true },
+  tags: [String],
+  createdAt: { type: Date, default: Date.now },
+  replies: [
+    {
+      username: { type: String, default: "Anonymous" },
+      reply: String,
+      createdAt: { type: Date, default: Date.now }
+    }
+  ]
+});
+
+const ForumPost = mongoose.model("ForumPost", forumPostSchema);
+
+// Create a post
+app.post("/api/forum/post", async (req, res) => {
+  try {
+    const { title, content, username, tags } = req.body;
+    if (!title || !content) return res.status(400).json({ error: "title & content required" });
+
+    const post = await ForumPost.create({
+      username: username || "Anonymous",
+      title,
+      content,
+      tags
+    });
+    res.json({ success: true, post });
+  } catch (err) {
+    console.error("Forum post error:", err);
+    res.status(500).json({ error: "Failed to create post" });
+  }
+});
+
+// List posts (most recent first)
+app.get("/api/forum", async (req, res) => {
+  try {
+    const posts = await ForumPost.find().sort({ createdAt: -1 }).limit(100);
+    res.json({ posts });
+  } catch (err) {
+    console.error("Forum list error:", err);
+    res.status(500).json({ error: "Failed to fetch posts" });
+  }
+});
+
+// Get single post
+app.get("/api/forum/:id", async (req, res) => {
+  try {
+    const post = await ForumPost.findById(req.params.id);
+    if (!post) return res.status(404).json({ error: "Not found" });
+    res.json({ post });
+  } catch (err) {
+    console.error("Forum get error:", err);
+    res.status(500).json({ error: "Failed to get post" });
+  }
+});
+
+// Reply to post
+app.post("/api/forum/:id/reply", async (req, res) => {
+  try {
+    const { reply, username } = req.body;
+    if (!reply) return res.status(400).json({ error: "Reply cannot be empty" });
+
+    const post = await ForumPost.findById(req.params.id);
+    if (!post) return res.status(404).json({ error: "Post not found" });
+
+    post.replies.push({
+      username: username || "Anonymous",
+      reply
+    });
+    await post.save();
+    res.json({ success: true, post });
+  } catch (err) {
+    console.error("Forum reply error:", err);
+    res.status(500).json({ error: "Failed to add reply" });
+  }
 });
 
 
